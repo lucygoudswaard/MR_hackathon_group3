@@ -1,0 +1,6 @@
+"","mr_results$outcome","mr_results$nsnp","mr_results$method","mr_results$b","mr_results$se","mr_results$pval"
+"1","Eosinophil",5,"Inverse variance weighted",-0.071911417816257,0.147367181237527,0.625567945397847
+"2","Eosinophil",5,"MR Egger",-0.512534147615771,0.33890139731452,0.227642632137643
+"3","Eosinophil",5,"Weighted median",-0.086443623093951,0.189755774462368,0.648712164468232
+"4","Eosinophil",5,"Weighted mode",-0.113474294237768,0.277903558826938,0.703949698935403
+"5","Eosinophil",2,"Inverse variance weighted",0.0224765566162999,0.220991285429297,0.91898854194563

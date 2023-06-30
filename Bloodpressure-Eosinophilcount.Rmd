@@ -1,0 +1,193 @@
+---
+title: "Blood pressure and Eosinophil count in African Ancestry"
+author: "Uganda MR Hackathon Group3"
+date: "2023-06-30"
+output: html_document
+---
+
+#Load needed packaages
+```{r}
+library(plyr) 
+library(TwoSampleMR)
+library(devtools)
+library(calibrate)
+library(ggrepel)
+library(ggthemes)
+library(TwoSampleMR)
+library(MRInstruments)
+library(ggplot2)
+library(png)
+```
+
+#Read in the Diastolic blood pressure snp file
+```{r}
+dbp_exp_dat <- read_exposure_data(
+    filename = "diastolic_5e-5.txt",
+    sep = "\t",
+    snp_col = "variant_id",
+    beta_col = "beta",
+    se_col = "standard_error",
+    effect_allele_col = "effect_allele",
+    other_allele_col = "other_allele",
+    eaf_col = "effect_allele_frequency",
+    pval_col = "p_value",
+    samplesize_col = "n",
+    phenotype_col = "Phenotype"
+)
+```
+
+
+#Read in the systolic blood pressure snp file
+```{r}
+sbp_exp_dat <- read_exposure_data(
+    filename = "systolic_5e-5.txt",
+    sep = "\t",
+    snp_col = "variant_id",
+    beta_col = "beta",
+    se_col = "standard_error",
+    effect_allele_col = "effect_allele",
+    other_allele_col = "other_allele",
+    eaf_col = "effect_allele_frequency",
+    pval_col = "p_value",
+    samplesize_col = "n",
+    phenotype_col = "Phenotype"
+)
+```
+
+#merge both into one dataframe
+#Restrict using pvalue 5e-7 and clump snps
+```{r}
+merged_exp_dat = rbind(dbp_exp_dat, sbp_exp_dat)
+merged_exp_dat = subset(merged_exp_dat, pval.exposure < 5e-7)
+merged_exp_dat = clump_data(merged_exp_dat, pop="AFR")
+```
+
+#plot allele frequencies in Uganda population and Durban population from Outcome data
+```{r}
+Eosino_data = read.table(file = "eosinophil.txt", header = TRUE, sep = "\t")
+x_column_name <- "eaf_uganda"
+y_column_name <- "eaf_DDS"
+
+# Fit linear regression model
+lm_model <- lm(formula = paste(y_column_name, "~", x_column_name), data = Eosino_data)
+
+# Extract R-squared value
+r_squared <- summary(lm_model)$r.squared
+
+# Create the scatter plot
+scatter_plot <- ggplot(Eosino_data, aes(x = !!as.name(x_column_name), y = !!as.name(y_column_name))) +
+  
+  geom_point() +
+  
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray") +  # Dotted line for x=y
+  
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +  # Regression line
+  
+  labs(title = "Scatter Plot",
+       
+       x = x_column_name,
+       
+       y = y_column_name,
+       
+       caption = paste0("R-squared = ", format(r_squared, digits = 4)))  # Display R-squared on the graph
+
+
+
+# Display the scatter plot
+png("UGA-DDS_Scatterplot.png")
+   print(scatter_plot)
+dev.off()
+```
+
+#extract exposure snps from outcome data
+```{r}
+outcome_dat_uga <- read_outcome_data(
+    snps = merged_exp_dat$SNP,
+    filename = "eosinophil.txt",
+    sep = "\t",
+    snp_col = "variant_id",
+    beta_col = "beta_fe",
+    se_col = "se_fe",
+    effect_allele_col = "ea",
+    other_allele_col = "oa",
+    eaf_col = "eaf_uganda",
+    pval_col = "pval_fe",
+    samplesize_col = "n",
+    phenotype_col = "Phenotype"
+)
+```
+# Harmonise the data
+```{r}
+dat <- harmonise_data(merged_exp_dat, outcome_dat_uga, action = 2)
+```
+# Check the casual effect of DBP/SBP on Eosinophil count
+```{r}
+dat_dbp = subset(dat, exposure == "Diastolic_bp")
+dat_sbp = subset(dat, exposure == "Systolic")
+mr_results_sbp <- mr(dat_sbp, method_list=c("mr_ivw","mr_egger_regression","mr_weighted_median", "mr_weighted_mode"))
+mr_results_sbp
+results_sbp<-cbind.data.frame(mr_results_sbp$outcome,mr_results_sbp$nsnp,mr_results_sbp$method,mr_results_sbp$b,mr_results_sbp$se,mr_results_sbp$pval)
+mr_results_dbp <- mr(dat_dbp, method_list=c("mr_ivw","mr_egger_regression","mr_weighted_median", "mr_weighted_mode"))
+mr_results_dbp
+results_dbp<-cbind.data.frame(mr_results_dbp$outcome,mr_results_dbp$nsnp,mr_results_dbp$method,mr_results_dbp$b,mr_results_dbp$se,mr_results_dbp$pval)
+
+```
+#Export the results
+```{r}
+write.csv(results,"DBP-SBP_Eosi_results.csv")
+```
+
+#Run sensitivity analyses
+
+#Is there evidence of heterogeneity in the genetic effects?
+```{r}
+het <- mr_heterogeneity(dat)
+het
+```
+#is there evidence of pleiotropy
+```{r}
+pleio <- mr_pleiotropy_test(dat)
+pleio
+res_single_sbp <- mr_singlesnp(dat_sbp)
+res_single_dbp <- mr_singlesnp(dat_dbp)
+```
+#visualise the causal effect
+```{r}
+png("SBP_Eosi_scatter.png")
+  mr_scatter_plot(mr_results_sbp, dat_sbp)
+dev.off()
+png("DBP_Eosi_scatter.png")
+  mr_scatter_plot(mr_results_dbp, dat_dbp)
+dev.off()
+```
+#Generate a forest plot of each of the SNP effects, which are then meta-analysed using the #IVW and MR-Egger methods
+```{r}
+png("SBP_Eosi_forest.png")
+  mr_forest_plot(res_single_sbp)
+dev.off()
+png("DBP_Eosi_forest.png")
+  mr_forest_plot(res_single_dbp)
+dev.off()
+```
+#Generate a funnel plot to check for asymmetry
+
+```{r}
+png("SBP_Eosi_funnel.png")
+  mr_funnel_plot(res_single_sbp)
+dev.off()
+png("DBP_Eosi_funnel.png")
+  mr_funnel_plot(res_single_dbp)
+dev.off()
+```
+#Run a leave-one-out analysis and generate a plot to test whether any one SNP is driving any #pleiotropy or asymmetry in the estimates
+
+```{r}
+res_loo_sbp <- mr_leaveoneout(dat_sbp)
+png("SBP_Eosi_loo.png")
+  mr_leaveoneout_plot(res_loo_sbp)
+dev.off()
+res_loo_dbp <- mr_leaveoneout(dat_dbp)
+png("DBP_Eosi_loo.png")
+  mr_leaveoneout_plot(res_loo_dbp)
+dev.off()
+```
